@@ -242,6 +242,17 @@ fn greet(name: &str) -> String {
 }
 ```";
 
+/// Resolve the output size: `--columns` overrides the detected size (terminal, then
+/// `$COLUMNS`/`$LINES`), which falls back to 80x24. `--columns 0` disables wrapping.
+fn resolve_terminal_size(detected: Option<TerminalSize>, columns: Option<u16>) -> TerminalSize {
+    let terminal_size = detected.unwrap_or_default();
+    match columns {
+        None => terminal_size,
+        Some(0) => terminal_size.with_max_columns(u16::MAX),
+        Some(max_columns) => terminal_size.with_max_columns(max_columns),
+    }
+}
+
 /// Print a short sample rendered with every built-in theme, to help pick one.
 fn list_themes() -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
@@ -342,7 +353,6 @@ fn main() {
         args.smart_punctuation || defaults.and_then(|d| d.smart_punctuation).unwrap_or(false);
     let emoji = args.emoji || defaults.and_then(|d| d.emoji).unwrap_or(false);
     let columns = args.columns.or_else(|| defaults.and_then(|d| d.columns));
-    let full_width = args.full_width || defaults.and_then(|d| d.full_width).unwrap_or(false);
     let local_only = args.local_only || defaults.and_then(|d| d.local_only).unwrap_or(false);
     let fail_fast = args.fail_fast || defaults.and_then(|d| d.fail_fast).unwrap_or(false);
     let toc = args.toc;
@@ -400,13 +410,7 @@ fn main() {
         #[cfg(windows)]
         anstyle_query::windows::enable_ansi_colors();
 
-        let terminal_size = TerminalSize::detect().unwrap_or_default();
-        let terminal_size = match columns {
-            None if full_width => terminal_size,
-            None => terminal_size.with_max_columns(terminal_size.columns.min(80)),
-            Some(0) => terminal_size.with_max_columns(u16::MAX),
-            Some(max_columns) => terminal_size.with_max_columns(max_columns),
-        };
+        let terminal_size = resolve_terminal_size(TerminalSize::detect(), columns);
         // Reserve the margin's two columns so wrapped output plus margin never
         // exceeds the requested width.
         let terminal_size = if margin {
@@ -531,5 +535,44 @@ fn main() {
         };
         event!(target: "mdcat::main", Level::TRACE, "Exiting with final exit code {}", exit_code);
         std::process::exit(exit_code);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_terminal_size;
+    use pulldown_cmark_mdcat::terminal::TerminalSize;
+
+    fn size(columns: u16) -> TerminalSize {
+        TerminalSize {
+            columns,
+            ..TerminalSize::default()
+        }
+    }
+
+    #[test]
+    fn detected_width_is_used_as_is() {
+        assert_eq!(resolve_terminal_size(Some(size(130)), None).columns, 130);
+    }
+
+    #[test]
+    fn columns_overrides_detected_width() {
+        assert_eq!(
+            resolve_terminal_size(Some(size(130)), Some(100)).columns,
+            100
+        );
+    }
+
+    #[test]
+    fn columns_zero_disables_wrapping() {
+        assert_eq!(
+            resolve_terminal_size(Some(size(130)), Some(0)).columns,
+            u16::MAX
+        );
+    }
+
+    #[test]
+    fn undetected_falls_back_to_80() {
+        assert_eq!(resolve_terminal_size(None, None).columns, 80);
     }
 }

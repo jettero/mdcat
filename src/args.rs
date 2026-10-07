@@ -175,15 +175,11 @@ pub struct CommonArgs {
     /// Disable all colours and other styles.
     #[arg(short = 'c', long, aliases=["nocolour", "no-color", "nocolor"])]
     pub no_colour: bool,
-    /// Maximum number of columns to use for output. Defaults to 80, the terminal width (whichever
-    /// is smaller), or `defaults.columns` in `~/.config/mdcat/config.toml`. Pass 0 to disable
-    /// line wrapping.
-    #[arg(long, conflicts_with = "full_width")]
+    /// Number of columns to use for output, overriding the detected terminal width (from the
+    /// terminal, then `$COLUMNS`, falling back to 80). Also settable via `defaults.columns` in
+    /// `~/.config/mdcat/config.toml`. Pass 0 to disable line wrapping.
+    #[arg(long)]
     pub columns: Option<u16>,
-    /// Use the full terminal width instead of capping it at 80 columns. Also settable via
-    /// `defaults.full_width` in `~/.config/mdcat/config.toml`.
-    #[arg(long, conflicts_with = "columns")]
-    pub full_width: bool,
     /// Do not load remote resources like images. Also settable via `defaults.local_only` in
     /// `~/.config/mdcat/config.toml`.
     #[arg(short, long = "local")]

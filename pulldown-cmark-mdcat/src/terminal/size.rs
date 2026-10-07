@@ -165,24 +165,25 @@ mod implementation {
 impl TerminalSize {
     /// Get terminal size from `$COLUMNS` and `$LINES`.
     ///
-    /// Do not assume any knowledge about window size.
+    /// Either one is enough; the other falls back to its default.  Do not assume
+    /// any knowledge about window size.
     pub fn from_env() -> Option<Self> {
-        let columns = std::env::var("COLUMNS")
-            .ok()
-            .and_then(|value| value.parse::<u16>().ok());
-        let rows = std::env::var("LINES")
-            .ok()
-            .and_then(|value| value.parse::<u16>().ok());
-
-        match (columns, rows) {
-            (Some(columns), Some(rows)) => Some(Self {
-                columns,
-                rows,
-                pixels: None,
-                cell: None,
-            }),
-            _ => None,
+        let var = |name| {
+            std::env::var(name)
+                .ok()
+                .and_then(|value| value.parse::<u16>().ok())
+                .filter(|&value| value > 0)
+        };
+        let (columns, rows) = (var("COLUMNS"), var("LINES"));
+        if columns.is_none() && rows.is_none() {
+            return None;
         }
+        let default = Self::default();
+        Some(Self {
+            columns: columns.unwrap_or(default.columns),
+            rows: rows.unwrap_or(default.rows),
+            ..default
+        })
     }
 
     /// Detect the terminal size by querying the underlying terminal.
@@ -221,5 +222,34 @@ impl TerminalSize {
             pixels,
             cell: self.cell,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TerminalSize;
+    use temp_env::with_vars;
+
+    #[test]
+    fn from_env_uses_columns_without_lines() {
+        with_vars(vec![("COLUMNS", Some("130")), ("LINES", None)], || {
+            let size = TerminalSize::from_env().unwrap();
+            assert_eq!((size.columns, size.rows), (130, 24));
+        })
+    }
+
+    #[test]
+    fn from_env_uses_lines_without_columns() {
+        with_vars(vec![("COLUMNS", None), ("LINES", Some("50"))], || {
+            let size = TerminalSize::from_env().unwrap();
+            assert_eq!((size.columns, size.rows), (80, 50));
+        })
+    }
+
+    #[test]
+    fn from_env_without_either_is_none() {
+        with_vars(vec![("COLUMNS", None::<&str>), ("LINES", None)], || {
+            assert!(TerminalSize::from_env().is_none());
+        })
     }
 }
